@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gloucester Tram Route</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        #legend, #controls {
+            background: white;
+            padding: 10px;
+            margin: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            position: absolute;
+            z-index: 1000;
+        }
+        #legend {
+            bottom: 30px;
+            right: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        #controls {
+            top: 10px;
+            left: 10px;
+        }
+        .legend-item, .poi-item {
+            margin: 5px 0;
+            cursor: pointer;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 20px;
+            height: 10px;
+            margin-right: 5px;
+        }
+        .highlight {
+            font-weight: bold;
+            text-decoration: underline;
+        }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCcmJoknqRTj6JQzbsabdbK-hX0b75Lkso&callback=initMap" async defer></script>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="legend"><h3>Tram Routes</h3></div>
+    <div id="controls">
+        <h3>Controls</h3>
+        <div>
+            <input type="checkbox" id="showPOI" checked>
+            <label for="showPOI">Show Points of Interest</label>
+        </div>
+        <div>
+            <select id="routeSelect">
+                <option value="all">All Routes</option>
+                <option value="route1">Route 1</option>
+                <option value="route2">Route 2</option>
+            </select>
+        </div>
+    </div>
+    <script>
+        let map, directionsRenderers = [], poiMarkers = [];
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 13,
+                center: { lat: 51.8642, lng: -2.2382 } // Gloucester City Centre
+            });
+
+            const tramStops = [
+                { lat: 51.8642, lng: -2.2382, name: 'City Centre', facilities: 'Ticket office, Waiting area', buses: '1, 2, 3' },
+                { lat: 51.8654, lng: -2.2387, name: 'Gloucester Railway Station', facilities: 'Ticket machines, Bike racks', buses: '4, 5' },
+                { lat: 51.8663, lng: -2.2479, name: 'Gloucester Docks', facilities: 'Covered waiting area', buses: '6, 7' },
+                { lat: 51.8722, lng: -2.2407, name: 'Kingsholm Stadium', facilities: 'Ticket machines', buses: '8, 9' },
+                { lat: 51.8689, lng: -2.2276, name: 'Gloucester Royal Hospital', facilities: 'Accessible ramps, Ticket office', buses: '10, 11' },
+                { lat: 51.8605, lng: -2.2414, name: 'Gloucester Park', facilities: 'Bike racks', buses: '12, 13' },
+                { lat: 51.8685, lng: -2.2470, name: 'Gloucester Cathedral', facilities: 'Information kiosk', buses: '14, 15' },
+                { lat: 51.8844, lng: -2.2166, name: 'University of Gloucestershire', facilities: 'Covered waiting area, Ticket machines', buses: '16, 17' }
+            ];
+
+            const pointsOfInterest = [
+                { lat: 51.8675, lng: -2.2477, name: 'Gloucester Quays' },
+                { lat: 51.8658, lng: -2.2443, name: 'Gloucester Waterways Museum' },
+                { lat: 51.8697, lng: -2.2446, name: 'Kingsholm Rugby Ground' },
+                { lat: 51.8629, lng: -2.2331, name: 'Gloucester City Museum' }
+            ];
+
+            const colors = ['#FF5733', '#33FF57', '#3357FF', '#FF33A6', '#A633FF', '#FF8333', '#33FFF5'];
+            const directionsService = new google.maps.DirectionsService();
+            const legend = document.getElementById('legend');
+
+            // Define routes
+            const routes = {
+                route1: [0, 1, 2, 3, 4],
+                route2: [0, 5, 6, 7]
+            };
+
+            function drawRoute(routeStops, routeName) {
+                for (let i = 0; i < routeStops.length - 1; i++) {
+                    const request = {
+                        origin: new google.maps.LatLng(tramStops[routeStops[i]].lat, tramStops[routeStops[i]].lng),
+                        destination: new google.maps.LatLng(tramStops[routeStops[i + 1]].lat, tramStops[routeStops[i + 1]].lng),
+                        travelMode: 'DRIVING'
+                    };
+                    directionsService.route(request, (result, status) => {
+                        if (status === 'OK') {
+                            const directionsRenderer = new google.maps.DirectionsRenderer({
+                                map: map,
+                                suppressMarkers: true,
+                                polylineOptions: {
+                                    strokeColor: colors[i % colors.length],
+                                    strokeWeight: 4
+                                }
+                            });
+                            directionsRenderer.setDirections(result);
+                            directionsRenderers.push(directionsRenderer);
+
+                            // Add to legend
+                            const div = document.createElement('div');
+                            div.innerHTML = `<span class="legend-color" style="background-color:${colors[i % colors.length]}"></span>${tramStops[routeStops[i]].name} to ${tramStops[routeStops[i+1]].name} (${routeName})`;
+                            div.className = 'legend-item';
+                            div.addEventListener('click', () => highlightSegment(directionsRenderer));
+                            legend.appendChild(div);
+
+                            // Estimate travel time
+                            const route = result.routes[0];
+                            let duration = 0;
+                            for (let j = 0; j < route.legs.length; j++) {
+                                duration += route.legs[j].duration.value;
+                            }
+                            div.title = `Estimated travel time: ${Math.round(duration / 60)} minutes`;
+                        } else {
+                            console.error('Error fetching directions ' + status);
+                        }
+                    });
+                }
+            }
+
+            // Draw initial routes
+            drawRoute(routes.route1, 'Route 1');
+            drawRoute(routes.route2, 'Route 2');
+
+            // Add markers with info windows for each tram stop
+            tramStops.forEach((stop, index) => {
+                const marker = new google.maps.Marker({
+                    position: { lat: stop.lat, lng: stop.lng },
+                    map: map,
+                    title: stop.name,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 7,
+                        fillColor: "#FFFFFF",
+                        fillOpacity: 1,
+                        strokeWeight: 3,
+                        strokeColor: "#000000"
+                    }
+                });
+                const infowindow = new google.maps.InfoWindow({
+                    content: `<strong>${stop.name}</strong><br>
+                              Stop ${index + 1}<br>
+                              Facilities: ${stop.facilities}<br>
+                              Connecting buses: ${stop.buses}`
+                });
+                marker.addListener('click', () => {
+                    infowindow.open(map, marker);
+                });
+            });
+
+            // Add points of interest
+            pointsOfInterest.forEach(poi => {
+                const marker = new google.maps.Marker({
+                    position: { lat: poi.lat, lng: poi.lng },
+                    map: map,
+                    title: poi.name,
+                    icon: {
+                        url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+                    }
+                });
+                poiMarkers.push(marker);
+                const infowindow = new google.maps.InfoWindow({
+                    content: `<strong>${poi.name}</strong>`
+                });
+                marker.addListener('click', () => {
+                    infowindow.open(map, marker);
+                });
+                const div = document.createElement('div');
+                div.innerHTML = poi.name;
+                div.className = 'poi-item';
+                legend.appendChild(div);
+            });
+
+            map.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(legend);
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(document.getElementById('controls'));
+
+            // Event listeners for controls
+            document.getElementById('showPOI').addEventListener('change', function() {
+                poiMarkers.forEach(marker => marker.setVisible(this.checked));
+            });
+
+            document.getElementById('routeSelect').addEventListener('change', function() {
+                directionsRenderers.forEach(renderer => renderer.setMap(null));
+                directionsRenderers = [];
+                legend.innerHTML = '<h3>Tram Routes</h3>';
+                if (this.value === 'all') {
+                    drawRoute(routes.route1, 'Route 1');
+                    drawRoute(routes.route2, 'Route 2');
+                } else if (this.value === 'route1') {
+                    drawRoute(routes.route1, 'Route 1');
+                } else if (this.value === 'route2') {
+                    drawRoute(routes.route2, 'Route 2');
+                }
+            });
+        }
+
+        function highlightSegment(renderer) {
+            directionsRenderers.forEach(r => {
+                if (r === renderer) {
+                    r.setOptions({ polylineOptions: { strokeWeight: 6, strokeOpacity: 1 } });
+                    r.setMap(map);
+                } else {
+                    r.setOptions({ polylineOptions: { strokeWeight: 4, strokeOpacity: 0.5 } });
+                    r.setMap(map);
+                }
+            });
+        }
+
+        initMap();
+    </script>
+</body>
+</html>
